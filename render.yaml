@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: isl-sign-backend
+    env: python
+    rootDir: app
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.13
+      - key: FLASK_DEBUG
+        value: "false"
