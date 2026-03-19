@@ -80,7 +80,9 @@ This repo now supports split deployment:
 3. Deploy.
 4. Edit `frontend/index.html` and set:
    ```html
-   window.APP_CONFIG = { apiBaseUrl: "https://<your-render-service>.onrender.com" };
+   window.APP_CONFIG = { apiBaseUrl: "https://<your-render-service
+     >.onrender.com" };</your-render-service
+   >
    ```
 5. Redeploy Vercel after updating the backend URL.
 

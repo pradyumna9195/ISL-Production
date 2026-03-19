@@ -59,7 +59,8 @@ document.addEventListener("DOMContentLoaded", () => {
       return true;
     } catch (error) {
       console.error("Health check error:", error);
-      statusElement.textContent = "Backend unavailable. Please retry in a few seconds.";
+      statusElement.textContent =
+        "Backend unavailable. Please retry in a few seconds.";
       return false;
     }
   }
