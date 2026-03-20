@@ -21,20 +21,20 @@ document.addEventListener("DOMContentLoaded", () => {
   ];
   const threshold = 0.4;
   const sequenceLength = 30;
-  const stablePredictionCount = 10;
-  const apiBaseUrl =
-    window.APP_CONFIG && window.APP_CONFIG.apiBaseUrl
-      ? window.APP_CONFIG.apiBaseUrl.replace(/\/$/, "")
-      : "";
+  const stabilityCount = 10;
+  const modelUrl = (window.APP_CONFIG?.modelUrl || "").trim();
+  const apiBaseUrl = (window.APP_CONFIG?.apiBaseUrl || "").replace(/\/$/, "");
+  const useBackendFallback = window.APP_CONFIG?.useBackendFallback !== false;
 
   let sequence = [];
   let predictions = [];
   let sentence = [];
   let isRunning = false;
   let isPredicting = false;
+  let model = null;
   let holistic = null;
   let camera = null;
-  let frameCounter = 0;
+  let latestConfidence = null;
 
   stopBtn.disabled = true;
   resetBtn.disabled = true;
@@ -44,61 +44,18 @@ document.addEventListener("DOMContentLoaded", () => {
   stopBtn.addEventListener("click", stopRecognition);
   resetBtn.addEventListener("click", resetRecognition);
 
-  async function warmupBackend() {
-    if (!apiBaseUrl) {
-      return true;
-    }
-
-    statusElement.textContent = "Waking backend service...";
-
-    try {
-      const response = await fetch(`${apiBaseUrl}/health`, { method: "GET" });
-      if (!response.ok) {
-        throw new Error(`Health check failed with status ${response.status}`);
-      }
-      return true;
-    } catch (error) {
-      console.error("Health check error:", error);
-      statusElement.textContent =
-        "Backend unavailable. Please retry in a few seconds.";
-      return false;
-    }
-  }
-
-  async function setupHolistic() {
-    if (holistic) {
-      return;
-    }
-
-    holistic = new Holistic({
-      locateFile: (file) =>
-        `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`,
-    });
-
-    holistic.setOptions({
-      modelComplexity: 1,
-      smoothLandmarks: true,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5,
-    });
-
-    holistic.onResults(onResults);
-  }
-
   async function startRecognition() {
-    if (isRunning) {
-      return;
-    }
+    if (isRunning) return;
 
     startBtn.disabled = true;
+    statusElement.textContent = "Preparing model and camera...";
 
-    const backendReady = await warmupBackend();
-    if (!backendReady) {
+    await setupModelAndDetector();
+
+    if (!holistic || (!model && !useBackendFallback)) {
       startBtn.disabled = false;
       return;
     }
-
-    await setupHolistic();
 
     try {
       camera = new Camera(videoElement, {
@@ -112,27 +69,26 @@ document.addEventListener("DOMContentLoaded", () => {
       });
 
       await camera.start();
-
-      isRunning = true;
-      stopBtn.disabled = false;
-      resetBtn.disabled = false;
-      cameraStateElement.textContent = "Camera is live";
-      statusElement.textContent = "Collecting landmarks...";
     } catch (error) {
       console.error("Failed to start camera:", error);
-      cameraStateElement.textContent =
-        "Camera permission denied or unavailable";
-      statusElement.textContent = "Please allow camera access and try again.";
+      statusElement.textContent = "Camera permission denied or unavailable.";
+      cameraStateElement.textContent = "Camera unavailable";
       startBtn.disabled = false;
-    }
-  }
-
-  function stopRecognition() {
-    if (!isRunning) {
       return;
     }
 
+    isRunning = true;
+    stopBtn.disabled = false;
+    resetBtn.disabled = false;
+    cameraStateElement.textContent = "Camera is live";
+    statusElement.textContent = "Collecting landmarks...";
+  }
+
+  function stopRecognition() {
+    if (!isRunning) return;
+
     isRunning = false;
+
     if (camera) {
       camera.stop();
       camera = null;
@@ -155,14 +111,40 @@ document.addEventListener("DOMContentLoaded", () => {
     sequence = [];
     predictions = [];
     sentence = [];
-    frameCounter = 0;
+    latestConfidence = null;
     isPredicting = false;
 
     sentenceElement.textContent = "";
+    confidenceElement.textContent = "Confidence: --";
     statusElement.textContent = isRunning
       ? "Collecting landmarks..."
       : "Waiting for signs...";
-    confidenceElement.textContent = "Confidence: --";
+  }
+
+  async function setupModelAndDetector() {
+    if (!holistic) {
+      holistic = new Holistic({
+        locateFile: (file) =>
+          `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`,
+      });
+
+      holistic.setOptions({
+        modelComplexity: 1,
+        smoothLandmarks: true,
+        minDetectionConfidence: 0.5,
+        minTrackingConfidence: 0.5,
+      });
+
+      holistic.onResults(onResults);
+    }
+
+    if (!model && modelUrl) {
+      try {
+        model = await tf.loadLayersModel(modelUrl);
+      } catch (error) {
+        console.warn("Browser model load failed, fallback may be used:", error);
+      }
+    }
   }
 
   function onResults(results) {
@@ -213,23 +195,21 @@ document.addEventListener("DOMContentLoaded", () => {
       });
     }
 
+    drawOverlay();
     canvasCtx.restore();
 
     const keypoints = extractKeypoints(results);
     sequence.push(keypoints);
     sequence = sequence.slice(-sequenceLength);
 
-    if (sequence.length < sequenceLength) {
-      statusElement.textContent = `Collecting landmarks... ${sequence.length}/${sequenceLength}`;
+    if (sequence.length < sequenceLength || isPredicting) {
+      if (sequence.length < sequenceLength) {
+        statusElement.textContent = `Collecting landmarks... ${sequence.length}/${sequenceLength}`;
+      }
       return;
     }
 
-    frameCounter += 1;
-    if (frameCounter % 2 !== 0 || isPredicting) {
-      return;
-    }
-
-    sendForPrediction(sequence);
+    runPrediction(sequence);
   }
 
   function extractKeypoints(results) {
@@ -247,8 +227,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const flattened = [];
-    for (let i = 0; i < landmarks.length; i += 1) {
-      const landmark = landmarks[i];
+    for (let index = 0; index < landmarks.length; index += 1) {
+      const landmark = landmarks[index];
       flattened.push(landmark.x, landmark.y, landmark.z);
       if (includeVisibility) {
         flattened.push(
@@ -256,50 +236,67 @@ document.addEventListener("DOMContentLoaded", () => {
         );
       }
     }
-
     return flattened;
   }
 
-  async function sendForPrediction(currentSequence) {
+  async function runPrediction(currentSequence) {
     isPredicting = true;
-
     try {
-      const response = await fetch(`${apiBaseUrl}/predict`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ sequence: currentSequence }),
-      });
+      let predictedIndex = -1;
+      let confidence = 0;
 
-      if (!response.ok) {
-        throw new Error(`Prediction failed with status ${response.status}`);
+      if (model) {
+        const inputTensor = tf.tensor(
+          currentSequence,
+          [1, sequenceLength, 1662],
+          "float32",
+        );
+        const outputTensor = model.predict(inputTensor);
+        const probabilities = await outputTensor.data();
+
+        predictedIndex = probabilities.indexOf(Math.max(...probabilities));
+        confidence = Number(probabilities[predictedIndex] || 0);
+
+        inputTensor.dispose();
+        outputTensor.dispose();
+      } else if (useBackendFallback) {
+        const response = await fetch(`${apiBaseUrl}/predict`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sequence: currentSequence }),
+        });
+
+        if (!response.ok) {
+          const message = await response.text();
+          throw new Error(
+            `Fallback prediction failed ${response.status}: ${message}`,
+          );
+        }
+
+        const data = await response.json();
+        predictedIndex = actions.indexOf(data.action);
+        confidence = Number(data.confidence || 0);
       }
 
-      const data = await response.json();
-      const actionIndex = actions.indexOf(data.action);
-
-      if (actionIndex === -1) {
+      if (predictedIndex < 0) {
         return;
       }
 
-      const confidence = Number(data.confidence || 0);
+      latestConfidence = confidence;
       confidenceElement.textContent = `Confidence: ${(confidence * 100).toFixed(1)}%`;
 
-      predictions.push(actionIndex);
-      predictions = predictions.slice(-stablePredictionCount);
+      predictions.push(predictedIndex);
+      predictions = predictions.slice(-stabilityCount);
 
-      if (predictions.length === stablePredictionCount) {
-        const isStable = predictions.every(
-          (prediction) => prediction === actionIndex,
-        );
-        if (isStable && confidence > threshold) {
-          const predictedAction = actions[actionIndex];
+      if (predictions.length === stabilityCount) {
+        const stable = predictions.every((value) => value === predictedIndex);
+        if (stable && confidence > threshold) {
+          const detectedAction = actions[predictedIndex];
           if (
             sentence.length === 0 ||
-            sentence[sentence.length - 1] !== predictedAction
+            sentence[sentence.length - 1] !== detectedAction
           ) {
-            sentence.push(predictedAction);
+            sentence.push(detectedAction);
             sentence = sentence.slice(-5);
           }
         }
@@ -311,9 +308,32 @@ document.addEventListener("DOMContentLoaded", () => {
       statusElement.textContent = recognizedText;
     } catch (error) {
       console.error("Prediction error:", error);
-      statusElement.textContent = "Prediction service unavailable. Try again.";
+      latestConfidence = null;
+      statusElement.textContent =
+        "Prediction unavailable. Check model/fallback setup.";
     } finally {
       isPredicting = false;
     }
+  }
+
+  function drawOverlay() {
+    const recognizedText =
+      sentence.length > 0 ? sentence.join(" ") : "Waiting for signs...";
+    const confidenceText =
+      latestConfidence === null
+        ? "Confidence: --"
+        : `Confidence: ${(latestConfidence * 100).toFixed(1)}%`;
+
+    canvasCtx.fillStyle = "rgba(245, 117, 16, 0.9)";
+    canvasCtx.fillRect(0, 0, canvasElement.width, 46);
+    canvasCtx.fillStyle = "#ffffff";
+    canvasCtx.font = "20px Arial";
+    canvasCtx.fillText(recognizedText, 10, 30);
+
+    canvasCtx.fillStyle = "rgba(0, 0, 0, 0.5)";
+    canvasCtx.fillRect(0, canvasElement.height - 34, 220, 34);
+    canvasCtx.fillStyle = "#ffffff";
+    canvasCtx.font = "15px Arial";
+    canvasCtx.fillText(confidenceText, 10, canvasElement.height - 12);
   }
 });

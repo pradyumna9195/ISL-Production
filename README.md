@@ -76,20 +76,15 @@ This repo now supports split deployment:
 ### 2) Deploy frontend on Vercel
 
 1. Import the same GitHub repository in Vercel.
-2. Set **Root Directory** to `frontend`.
+2. Set **Root Directory** to `app`.
 3. Deploy.
-4. Edit `frontend/index.html` and set:
-   ```html
-   window.APP_CONFIG = { apiBaseUrl: "https://<your-render-service
-     >.onrender.com" };</your-render-service
-   >
-   ```
+4. Edit `app/index.html` and set `window.APP_CONFIG.apiBaseUrl` to your Render backend URL.
 5. Redeploy Vercel after updating the backend URL.
 
 ### 3) Production check
 
 1. Open your Vercel URL in browser.
-2. Click **Start Camera** and allow webcam permission.
+2. Click **Start Recognition** and allow webcam permission.
 3. Wait for backend wakeup (free-tier cold start), then verify live predictions.
 
 For more detailed instructions, see the README.md file in the app directory.

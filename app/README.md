@@ -6,7 +6,8 @@ This is a web application for real-time sign language recognition using a pre-tr
 
 - Browser-based webcam capture (camera runs on client device)
 - MediaPipe JS landmark extraction in real time
-- Sequence prediction via backend `/predict` API with TensorFlow model
+- Browser TensorFlow.js inference (primary path)
+- Backend `/predict` fallback (optional)
 - Visual feedback with face, pose, and hand landmarks
 - Stable recognized sentence with confidence display
 
@@ -48,17 +49,38 @@ This is a web application for real-time sign language recognition using a pre-tr
    http://127.0.0.1:5002/
    ```
 
-3. Click "Start Camera" and allow webcam permission.
+3. Click "Start Recognition" and allow webcam permission.
+
+### Model conversion for browser inference
+
+1. Install converter dependencies (optional, may require a separate Python env if dependency conflicts appear):
+
+   ```
+   pip install tensorflowjs
+   ```
+
+2. Convert the model:
+
+   ```
+   python convert_to_tfjs.py
+   ```
+
+3. Expected output location:
+
+   ```
+   static/models/action_best_tfjs/model.json
+   ```
+
+If conversion fails, keep `useBackendFallback: true` in frontend config so predictions use `/predict`.
 
 ### Split Deployment (Vercel frontend + separate backend)
 
 - Keep this Flask app deployed as backend (for `/predict`).
-- Deploy backend with `render.yaml` from the repository root.
-- Deploy frontend from the `frontend/` directory on Vercel.
-- In `frontend/index.html`, set `window.APP_CONFIG.apiBaseUrl` to your backend URL.
+- Deploy frontend from the `app/` directory on Vercel.
+- Use `app/index.html` and `app/vercel.json` for static deployment.
+- In `app/index.html`, set `window.APP_CONFIG.apiBaseUrl` to your backend URL.
 - Example: `https://your-backend.onrender.com`
-- CORS is enabled in backend so cross-origin prediction requests are allowed.
-- Frontend pings `/health` before camera start to wake free-tier backend services.
+- Keep `useBackendFallback: true` unless browser model conversion succeeds.
 
 ### Render backend (quick setup)
 
@@ -72,7 +94,7 @@ Use these values if configuring manually instead of Blueprint:
 ## Usage
 
 1. Position yourself in a well-lit area with the camera facing you.
-2. Click the "Start Camera" button.
+2. Click the "Start Recognition" button.
 3. Allow browser camera permission when prompted.
 4. After sequence warmup, begin signing one of the available signs.
 5. Hold each sign steady for better recognition stability.

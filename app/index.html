@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sign Language Recognition</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="./static/css/styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 </head>
 <body>
@@ -19,7 +19,7 @@
     <main>
         <div class="container">
             <h1>Sign Language Recognition</h1>
-            
+
             <div class="video-section">
                 <div class="video-wrapper">
                     <video id="input-video" playsinline muted></video>
@@ -27,7 +27,7 @@
                 </div>
                 <p id="cameraState" class="camera-state">Camera is off</p>
             </div>
-            
+
             <div class="recognition-section">
                 <div class="sentence-container">
                     <h2>Recognized Signs:</h2>
@@ -35,7 +35,7 @@
                     <div id="status" class="status"></div>
                     <div id="confidence" class="status">Confidence: --</div>
                 </div>
-                
+
                 <div class="controls">
                     <button id="startBtn" class="btn start">Start Recognition</button>
                     <button id="stopBtn" class="btn stop">Stop Recognition</button>
@@ -52,7 +52,7 @@
     <script>
         window.APP_CONFIG = {
             modelUrl: '/static/models/action_best_tfjs/model.json/model.json',
-            apiBaseUrl: '',
+            apiBaseUrl: 'https://YOUR_BACKEND_URL_HERE',
             useBackendFallback: true
         };
     </script>
@@ -60,6 +60,6 @@
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js"></script>
-    <script src="{{ url_for('static', filename='js/script.js') }}"></script>
+    <script src="./static/js/script.js"></script>
 </body>
-</html> 
+</html>
